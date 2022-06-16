@@ -1,0 +1,69 @@
+name: Build and Deploy Image
+
+on:
+  push:
+    branches: [ main, dev ]
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Set Environments
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+          COMMIT_SHORT_SHA=`git rev-parse --short ${GITHUB_SHA}`
+          COMMIT_COUNT=`git rev-list --count HEAD`
+          COMMIT_TIME=`git show -s --format=%ct HEAD`
+          TAG_LATEST="${BRANCH}-latest"
+
+          if [ "$BRANCH" = "main" ]; then
+            TAG_LATEST="latest"
+          fi
+
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "COMMIT_SHORT_SHA=$COMMIT_SHORT_SHA" >> $GITHUB_ENV
+          echo "COMMIT_COUNT=$COMMIT_COUNT" >> $GITHUB_ENV
+          echo "COMMIT_TIME=$COMMIT_TIME" >> $GITHUB_ENV
+          echo "TAG_LATEST=$TAG_LATEST" >> $GITHUB_ENV
+      - name: Create Dockerfile
+        run: |
+          cat > dockerfile << EOF
+          FROM python:latest AS base
+          WORKDIR /app
+          RUN python -m pip install --upgrade pip
+          RUN pip install tensorflow ckiptagger gdown
+          VOLUME [ "/app/data" ]
+
+          FROM netcorext/tiny-tools:latest AS data
+          WORKDIR /
+          RUN curl -LO http://ckip.iis.sinica.edu.tw/data/ckiptagger/data.zip
+          RUN unzip data.zip && rm -rf data.zip
+
+          FROM python:latest AS build
+          WORKDIR /sources
+          COPY . .
+          COPY --from=data /data ./data
+
+          FROM base AS final
+          WORKDIR /app
+          COPY --from=build /sources .
+          ENV MAX_WORKERS=10
+          ENV PORT=80
+          ENTRYPOINT python ckiptagger_server.py
+          EOF
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: |
+            netcorext/ckiptagger-grpc:${{ env.COMMIT_SHORT_SHA }}
+            netcorext/ckiptagger-grpc:${{ env.TAG_LATEST }}

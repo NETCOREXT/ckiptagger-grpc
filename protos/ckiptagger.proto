@@ -1,0 +1,26 @@
+syntax = "proto3";
+package ckiptagger.api;
+
+import "google/protobuf/wrappers.proto";
+
+service Tagger {
+   rpc GetWordSegmentation (GetWordSegmentationRequest) returns (GetWordSegmentationRequest.Result);
+}
+
+message GetWordSegmentationRequest {
+  repeated string sentences = 1;
+  google.protobuf.BoolValue enablePOS = 2;
+  google.protobuf.BoolValue enableNER = 3;
+  google.protobuf.StringValue delimiter = 4;
+  map<string, int32> recommend = 5;
+  map<string, int32> coerce = 6;
+
+  message Result {
+    repeated Sentence sentences = 1;
+    repeated Sentence entities = 2;
+
+    message Sentence {
+      repeated string words = 1;
+    }
+  }
+}
